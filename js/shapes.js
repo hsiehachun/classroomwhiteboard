@@ -210,7 +210,9 @@ export class ShapeRenderer {
       ctx.fillStyle = shape.fill;
     }
 
-    switch (shape.type) {
+    const shapeType = shape.shapeType || (shape.type !== 'shape' ? shape.type : null) || 'rect';
+
+    switch (shapeType) {
       case 'line':
         ctx.beginPath();
         ctx.moveTo(shape.x1, shape.y1);

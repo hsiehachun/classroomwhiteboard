@@ -395,8 +395,8 @@ export class PageManager {
           ctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
           ctx.stroke();
         }
-      } else if (el.type === 'shape') {
-        ShapeRenderer.drawShape(ctx, { type: el.shapeType, ...el });
+      } else if (el.type === 'shape' || el.shapeType) {
+        ShapeRenderer.drawShape(ctx, { ...el, type: el.shapeType || el.type });
       } else if (el.type === 'text') {
         ctx.font = `${el.fontSize || 22}px sans-serif`;
         ctx.fillStyle = el.color;

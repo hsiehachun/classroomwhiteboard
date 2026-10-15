@@ -65,6 +65,19 @@ export class ToolManager {
     this.updateSelectedActions();
     this.engine.clearOverlay();
 
+    // 依工具切換游標外觀
+    if (tool === 'select') {
+      this.engine.container.style.cursor = 'default';
+    } else if (tool === 'hand') {
+      this.engine.container.style.cursor = 'grab';
+    } else if (tool === 'text') {
+      this.engine.container.style.cursor = 'text';
+    } else if (tool === 'eraser' || tool === 'laser') {
+      this.engine.container.style.cursor = 'none';
+    } else {
+      this.engine.container.style.cursor = 'crosshair';
+    }
+
     // 如果切換為探照燈，初始化聚光位置
     if (tool === 'spotlight') {
       this.lastSpotlightPos = { sx: this.engine.width / 2, sy: this.engine.height / 2 };
@@ -82,8 +95,8 @@ export class ToolManager {
   // 設定顏色與筆寬
   setColor(color) {
     this.currentColor = color;
-    // 若當前正選取便利貼，則直接變更便利貼顏色
-    if (this.selectedElement && this.selectedElement.type === 'sticky') {
+    // 若當前正選取任何物件 (幾何形狀、便利貼、文字、筆畫)，直接變更該物件顏色
+    if (this.selectedElement) {
       this.selectedElement.color = color;
       this.history.recordChange();
       this.redrawMain();
@@ -92,6 +105,12 @@ export class ToolManager {
 
   setStrokeWidth(width) {
     this.strokeWidth = width;
+    // 若當前正選取幾何圖形或筆畫，直接調整其粗細
+    if (this.selectedElement && (this.selectedElement.type === 'shape' || this.selectedElement.type === 'stroke')) {
+      this.selectedElement.width = width;
+      this.history.recordChange();
+      this.redrawMain();
+    }
   }
 
   setShapeType(shapeType) {
@@ -156,10 +175,10 @@ export class ToolManager {
       this.selectedElement = found;
       if (this.selectedElement) {
         this.dragStart = worldPos;
-        this.elementStartPos = {
-          x: this.selectedElement.x ?? this.selectedElement.cx ?? (this.selectedElement.points ? this.selectedElement.points[0].x : 0),
-          y: this.selectedElement.y ?? this.selectedElement.cy ?? (this.selectedElement.points ? this.selectedElement.points[0].y : 0)
-        };
+        this.engine.container.style.cursor = 'grabbing';
+      } else {
+        this.dragStart = null;
+        this.engine.container.style.cursor = 'default';
       }
       this.updateSelectedActions();
       this.redrawMain();
@@ -186,6 +205,13 @@ export class ToolManager {
         this.currentPoints.push({ x: worldPos.x, y: worldPos.y, p: e.pressure || 0.5 });
         this.renderLiveStroke();
       }
+      return;
+    }
+
+    // 當選取工具處於靜止懸停時，顯示 move 游標提示可拖曳
+    if (this.currentTool === 'select' && !this.isDrawing) {
+      const hoverEl = this.findElementAt(worldPos);
+      this.engine.container.style.cursor = hoverEl ? 'move' : 'default';
       return;
     }
 
@@ -231,9 +257,14 @@ export class ToolManager {
       if (this.erasedInThisStroke) {
         this.history.recordChange();
       }
-    } else if (this.currentTool === 'select' && this.selectedElement) {
-      this.history.recordChange();
-      this.updateSelectedActions();
+    } else if (this.currentTool === 'select') {
+      if (this.selectedElement) {
+        this.history.recordChange();
+        this.updateSelectedActions();
+        this.engine.container.style.cursor = 'move';
+      } else {
+        this.engine.container.style.cursor = 'default';
+      }
     }
 
     this.currentPoints = [];
@@ -251,11 +282,11 @@ export class ToolManager {
       const recognized = ShapeRecognizer.recognize(this.currentPoints);
       if (recognized) {
         const shapeElement = {
+          ...recognized,
           type: 'shape',
           shapeType: recognized.type,
           color: this.currentColor,
-          width: this.strokeWidth,
-          ...recognized
+          width: this.strokeWidth
         };
         this.history.getCurrentElements().push(shapeElement);
         this.history.recordChange();
@@ -538,13 +569,12 @@ export class ToolManager {
 
       if (el.type === 'stroke') {
         hit = el.points.some(p => Math.hypot(p.x - pos.x, p.y - pos.y) < threshold + el.width / 2);
-      } else if (el.type === 'shape') {
-        hit = this.isShapeIntersecting(el, pos, threshold);
+      } else if (el.type === 'shape' || el.shapeType) {
+        hit = this.isPointInOrNearShape(el, pos, threshold);
       } else if (el.type === 'text' || el.type === 'sticky' || el.type === 'image') {
-        const w = el.width || 140;
-        const h = el.height || 40;
-        hit = pos.x >= el.x - threshold && pos.x <= el.x + w + threshold &&
-              pos.y >= el.y - threshold && pos.y <= el.y + h + threshold;
+        const bounds = this.getElementBounds(el);
+        hit = pos.x >= bounds.x - threshold && pos.x <= bounds.x + bounds.width + threshold &&
+              pos.y >= bounds.y - threshold && pos.y <= bounds.y + bounds.height + threshold;
       }
 
       if (hit) {
@@ -563,35 +593,7 @@ export class ToolManager {
   }
 
   isShapeIntersecting(shape, pos, threshold) {
-    switch (shape.shapeType) {
-      case 'rect':
-      case 'coordinate':
-        return pos.x >= shape.x - threshold && pos.x <= shape.x + shape.width + threshold &&
-               pos.y >= shape.y - threshold && pos.y <= shape.y + shape.height + threshold;
-      case 'circle': {
-        const dist = Math.hypot(pos.x - shape.cx, pos.y - shape.cy);
-        return Math.abs(dist - shape.r) < threshold;
-      }
-      case 'ellipse': {
-        const dist = Math.hypot((pos.x - shape.cx) / (shape.rx || 1), (pos.y - shape.cy) / (shape.ry || 1));
-        return Math.abs(dist - 1) < 0.25;
-      }
-      case 'line':
-      case 'arrow':
-      case 'double_arrow': {
-        const dx = shape.x2 - shape.x1;
-        const dy = shape.y2 - shape.y1;
-        const len = Math.hypot(dx, dy) || 1;
-        const d = Math.abs(dy * pos.x - dx * pos.y + shape.x2 * shape.y1 - shape.y2 * shape.x1) / len;
-        const inBounds = pos.x >= Math.min(shape.x1, shape.x2) - threshold &&
-                         pos.x <= Math.max(shape.x1, shape.x2) + threshold &&
-                         pos.y >= Math.min(shape.y1, shape.y2) - threshold &&
-                         pos.y <= Math.max(shape.y1, shape.y2) + threshold;
-        return d < threshold && inBounds;
-      }
-      default:
-        return false;
-    }
+    return this.isPointInOrNearShape(shape, pos, threshold);
   }
 
   // ===== 文字工具 (Inline DOM Text Editor) =====
@@ -686,22 +688,9 @@ export class ToolManager {
     }
 
     const el = this.selectedElement;
-    let wx = el.x;
-    let wy = el.y;
-    let ww = el.width || 140;
-
-    if (wx === undefined && el.cx !== undefined) {
-      wx = el.cx - (el.r || el.rx || 40);
-      wy = el.cy - (el.r || el.ry || 40);
-      ww = (el.r || el.rx || 40) * 2;
-    } else if (wx === undefined && el.x1 !== undefined) {
-      wx = Math.min(el.x1, el.x2);
-      wy = Math.min(el.y1, el.y2);
-      ww = Math.abs(el.x2 - el.x1);
-    }
-
-    const screenPos = this.engine.worldToScreen(wx, wy);
-    const screenW = ww * this.engine.scale;
+    const bounds = this.getElementBounds(el);
+    const screenPos = this.engine.worldToScreen(bounds.x, bounds.y);
+    const screenW = bounds.width * this.engine.scale;
 
     actionsBar.style.left = `${Math.max(16, screenPos.x + screenW / 2)}px`;
     actionsBar.style.top = `${Math.max(70, screenPos.y - 44)}px`;
@@ -824,17 +813,129 @@ export class ToolManager {
 
   // ===== 物件選取與移動 =====
 
+  getElementBounds(el) {
+    if (!el) return { x: 0, y: 0, width: 40, height: 40 };
+
+    if (el.x !== undefined && el.width !== undefined) {
+      return {
+        x: el.x,
+        y: el.y,
+        width: Math.max(16, el.width),
+        height: Math.max(16, el.height || 40)
+      };
+    }
+    if (el.cx !== undefined) {
+      const rx = Math.abs(el.rx || el.r || 40);
+      const ry = Math.abs(el.ry || el.r || 40);
+      return {
+        x: el.cx - rx,
+        y: el.cy - ry,
+        width: Math.max(16, rx * 2),
+        height: Math.max(16, ry * 2)
+      };
+    }
+    if (el.x1 !== undefined && el.x2 !== undefined) {
+      const minX = Math.min(el.x1, el.x2);
+      const minY = Math.min(el.y1, el.y2);
+      return {
+        x: minX,
+        y: minY,
+        width: Math.max(16, Math.abs(el.x2 - el.x1)),
+        height: Math.max(16, Math.abs(el.y2 - el.y1))
+      };
+    }
+    if (el.points && el.points.length > 0) {
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (const p of el.points) {
+        if (p.x < minX) minX = p.x;
+        if (p.x > maxX) maxX = p.x;
+        if (p.y < minY) minY = p.y;
+        if (p.y > maxY) maxY = p.y;
+      }
+      return {
+        x: minX,
+        y: minY,
+        width: Math.max(16, maxX - minX),
+        height: Math.max(16, maxY - minY)
+      };
+    }
+    return { x: el.x || 0, y: el.y || 0, width: el.width || 120, height: el.height || 40 };
+  }
+
+  isPointInOrNearShape(shape, pos, threshold) {
+    const shapeType = shape.shapeType || shape.type;
+    switch (shapeType) {
+      case 'rect':
+      case 'coordinate': {
+        const bounds = this.getElementBounds(shape);
+        return pos.x >= bounds.x - threshold && pos.x <= bounds.x + bounds.width + threshold &&
+               pos.y >= bounds.y - threshold && pos.y <= bounds.y + bounds.height + threshold;
+      }
+
+      case 'circle': {
+        const dist = Math.hypot(pos.x - shape.cx, pos.y - shape.cy);
+        return dist <= (shape.r || 40) + threshold;
+      }
+
+      case 'ellipse': {
+        const rx = (Math.abs(shape.rx) || 40) + threshold;
+        const ry = (Math.abs(shape.ry) || 40) + threshold;
+        return (((pos.x - shape.cx) ** 2) / (rx ** 2) + ((pos.y - shape.cy) ** 2) / (ry ** 2)) <= 1;
+      }
+
+      case 'line':
+      case 'arrow':
+      case 'double_arrow': {
+        const dx = shape.x2 - shape.x1;
+        const dy = shape.y2 - shape.y1;
+        const len = Math.hypot(dx, dy) || 1;
+        const dist = Math.abs(dy * pos.x - dx * pos.y + shape.x2 * shape.y1 - shape.y2 * shape.x1) / len;
+        const inBounds = pos.x >= Math.min(shape.x1, shape.x2) - threshold &&
+                         pos.x <= Math.max(shape.x1, shape.x2) + threshold &&
+                         pos.y >= Math.min(shape.y1, shape.y2) - threshold &&
+                         pos.y <= Math.max(shape.y1, shape.y2) + threshold;
+        return dist <= threshold && inBounds;
+      }
+
+      case 'triangle': {
+        const bounds = this.getElementBounds(shape);
+        return pos.x >= bounds.x - threshold && pos.x <= bounds.x + bounds.width + threshold &&
+               pos.y >= bounds.y - threshold && pos.y <= bounds.y + bounds.height + threshold;
+      }
+
+      default:
+        return false;
+    }
+  }
+
   findElementAt(worldPos) {
     const elements = this.history.getCurrentElements();
+    const threshold = 12 / this.engine.scale;
+
     for (let i = elements.length - 1; i >= 0; i--) {
       const el = elements[i];
+
+      // 1. 便利貼、圖片、文字
       if (el.type === 'sticky' || el.type === 'image' || el.type === 'text') {
-        const w = el.width || 140;
-        const h = el.height || 40;
-        if (worldPos.x >= el.x && worldPos.x <= el.x + w &&
-            worldPos.y >= el.y && worldPos.y <= el.y + h) {
+        const bounds = this.getElementBounds(el);
+        if (worldPos.x >= bounds.x - threshold && worldPos.x <= bounds.x + bounds.width + threshold &&
+            worldPos.y >= bounds.y - threshold && worldPos.y <= bounds.y + bounds.height + threshold) {
           return el;
         }
+      }
+
+      // 2. 幾何圖形 (支援矩形、圓形、橢圓、直線、箭頭、雙向箭頭、三角形、坐標系)
+      if (el.type === 'shape' || el.shapeType) {
+        if (this.isPointInOrNearShape(el, worldPos, threshold)) {
+          return el;
+        }
+      }
+
+      // 3. 自由手寫筆跡
+      if (el.type === 'stroke' && el.points && el.points.length > 0) {
+        const strokeThreshold = threshold + (el.width || 3) / 2;
+        const hit = el.points.some(p => Math.hypot(p.x - worldPos.x, p.y - worldPos.y) <= strokeThreshold);
+        if (hit) return el;
       }
     }
     return null;
@@ -878,10 +979,10 @@ export class ToolManager {
         }
 
         this.drawSmoothStroke(ctx, el.points);
-      } else if (el.type === 'shape') {
+      } else if (el.type === 'shape' || el.shapeType) {
         ShapeRenderer.drawShape(ctx, {
-          type: el.shapeType,
-          ...el
+          ...el,
+          type: el.shapeType || el.type
         });
       } else if (el.type === 'text') {
         ctx.font = `${el.fontSize || 22}px ${el.fontFamily || 'sans-serif'}`;
@@ -996,18 +1097,32 @@ export class ToolManager {
   }
 
   drawSelectionBox(ctx, el) {
+    const bounds = this.getElementBounds(el);
     ctx.save();
     ctx.strokeStyle = '#3b82f6';
     ctx.lineWidth = 1.5;
     ctx.setLineDash([4, 4]);
 
     const pad = 6;
-    let bx = el.x - pad;
-    let by = el.y - pad;
-    let bw = (el.width || 120) + pad * 2;
-    let bh = (el.height || 40) + pad * 2;
+    ctx.strokeRect(bounds.x - pad, bounds.y - pad, bounds.width + pad * 2, bounds.height + pad * 2);
 
-    ctx.strokeRect(bx, by, bw, bh);
+    // 繪製四角選取控制點錨點
+    ctx.fillStyle = '#ffffff';
+    ctx.strokeStyle = '#2563eb';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([]);
+    const corners = [
+      { x: bounds.x - pad, y: bounds.y - pad },
+      { x: bounds.x + bounds.width + pad, y: bounds.y - pad },
+      { x: bounds.x - pad, y: bounds.y + bounds.height + pad },
+      { x: bounds.x + bounds.width + pad, y: bounds.y + bounds.height + pad }
+    ];
+    for (const c of corners) {
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, 3.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
     ctx.restore();
   }
 }
