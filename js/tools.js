@@ -106,10 +106,20 @@ export class ToolManager {
   setStrokeWidth(width) {
     this.strokeWidth = width;
     // 若當前正選取幾何圖形或筆畫，直接調整其粗細
-    if (this.selectedElement && (this.selectedElement.type === 'shape' || this.selectedElement.type === 'stroke')) {
-      this.selectedElement.width = width;
-      this.history.recordChange();
-      this.redrawMain();
+    if (this.selectedElement) {
+      if (this.selectedElement.type === 'shape' || this.selectedElement.shapeType) {
+        this.selectedElement.strokeWidth = width;
+        if (this.selectedElement.shapeType !== 'rect' && this.selectedElement.shapeType !== 'coordinate') {
+          this.selectedElement.width = width;
+        }
+        this.history.recordChange();
+        this.redrawMain();
+      } else if (this.selectedElement.type === 'stroke') {
+        this.selectedElement.width = width;
+        this.selectedElement.strokeWidth = width;
+        this.history.recordChange();
+        this.redrawMain();
+      }
     }
   }
 
@@ -286,7 +296,8 @@ export class ToolManager {
           type: 'shape',
           shapeType: recognized.type,
           color: this.currentColor,
-          width: this.strokeWidth
+          strokeWidth: this.strokeWidth,
+          width: recognized.width !== undefined ? recognized.width : this.strokeWidth
         };
         this.history.getCurrentElements().push(shapeElement);
         this.history.recordChange();
@@ -329,13 +340,14 @@ export class ToolManager {
       type: 'shape',
       shapeType: this.currentShapeType,
       color: this.currentColor,
+      strokeWidth: this.strokeWidth,
       width: this.strokeWidth
     };
 
     const minX = Math.min(p1.x, p2.x);
     const minY = Math.min(p1.y, p2.y);
-    const width = Math.abs(dx);
-    const height = Math.abs(dy);
+    const width = Math.max(4, Math.abs(dx));
+    const height = Math.max(4, Math.abs(dy));
 
     switch (this.currentShapeType) {
       case 'rect':
@@ -346,7 +358,7 @@ export class ToolManager {
         break;
 
       case 'circle': {
-        const r = Math.hypot(dx, dy) / 2;
+        const r = Math.max(4, Math.hypot(dx, dy) / 2);
         shapeObj.cx = (p1.x + p2.x) / 2;
         shapeObj.cy = (p1.y + p2.y) / 2;
         shapeObj.r = r;
@@ -356,8 +368,8 @@ export class ToolManager {
       case 'ellipse':
         shapeObj.cx = minX + width / 2;
         shapeObj.cy = minY + height / 2;
-        shapeObj.rx = width / 2;
-        shapeObj.ry = height / 2;
+        shapeObj.rx = Math.max(4, width / 2);
+        shapeObj.ry = Math.max(4, height / 2);
         break;
 
       case 'line':
@@ -421,12 +433,14 @@ export class ToolManager {
     const dy = p2.y - p1.y;
     const minX = Math.min(p1.x, p2.x);
     const minY = Math.min(p1.y, p2.y);
-    const width = Math.abs(dx);
-    const height = Math.abs(dy);
+    const width = Math.max(4, Math.abs(dx));
+    const height = Math.max(4, Math.abs(dy));
 
     const tempShape = {
-      type: this.currentShapeType,
+      type: 'shape',
+      shapeType: this.currentShapeType,
       color: this.currentColor,
+      strokeWidth: this.strokeWidth,
       width: this.strokeWidth
     };
 
@@ -440,13 +454,13 @@ export class ToolManager {
       case 'circle':
         tempShape.cx = (p1.x + p2.x) / 2;
         tempShape.cy = (p1.y + p2.y) / 2;
-        tempShape.r = Math.hypot(dx, dy) / 2;
+        tempShape.r = Math.max(4, Math.hypot(dx, dy) / 2);
         break;
       case 'ellipse':
         tempShape.cx = minX + width / 2;
         tempShape.cy = minY + height / 2;
-        tempShape.rx = width / 2;
-        tempShape.ry = height / 2;
+        tempShape.rx = Math.max(4, width / 2);
+        tempShape.ry = Math.max(4, height / 2);
         break;
       case 'line':
       case 'arrow':

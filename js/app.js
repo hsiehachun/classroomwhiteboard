@@ -332,18 +332,29 @@ class WhiteboardApp {
   // ===== 工具列與介面操作事件 =====
 
   initToolbarEvents() {
+    const popover = document.getElementById('shapes-popover');
+    const shapeNames = {
+      rect: '矩形',
+      circle: '圓形',
+      ellipse: '橢圓',
+      line: '直線',
+      arrow: '單向箭頭',
+      double_arrow: '雙向箭頭',
+      triangle: '三角形',
+      coordinate: '平面直角坐標軸'
+    };
+
     // 工具按鈕切換
     const toolButtons = document.querySelectorAll('.tool-btn');
     toolButtons.forEach(btn => {
-      btn.addEventListener('click', () => {
+      btn.addEventListener('click', (e) => {
         const tool = btn.getAttribute('data-tool');
-        const popover = document.getElementById('shapes-popover');
 
         if (tool === 'shape') {
           // 切換幾何圖形彈出選單
-          popover.classList.toggle('show');
+          if (popover) popover.classList.toggle('show');
         } else {
-          popover.classList.remove('show');
+          if (popover) popover.classList.remove('show');
         }
 
         toolButtons.forEach(b => b.classList.remove('active'));
@@ -353,6 +364,9 @@ class WhiteboardApp {
 
         if (tool === 'spotlight') {
           this.widgets.showToast('🔦 探照燈已開啟（滑鼠移動聚光，滾輪調整大小，按 F 或 Esc 關閉）');
+        } else if (tool === 'shape') {
+          const currentName = shapeNames[this.toolManager.currentShapeType] || '矩形';
+          this.widgets.showToast(`📐 幾何圖形（當前：${currentName}，點擊選單可切換，在畫布拖曳即可畫出）`);
         }
       });
     });
@@ -360,14 +374,33 @@ class WhiteboardApp {
     // 幾何形狀子選單按鈕
     const shapeOptions = document.querySelectorAll('.shape-option-btn');
     shapeOptions.forEach(btn => {
-      btn.addEventListener('click', () => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
         const shapeType = btn.getAttribute('data-shape');
         shapeOptions.forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
+
+        // 確保主工具列上的幾何按鈕為 active 狀態
+        toolButtons.forEach(b => b.classList.remove('active'));
+        const shapeMainBtn = document.querySelector('.tool-btn[data-tool="shape"]');
+        if (shapeMainBtn) shapeMainBtn.classList.add('active');
+
         this.toolManager.setShapeType(shapeType);
-        document.getElementById('shapes-popover').classList.remove('show');
+        if (popover) popover.classList.remove('show');
         this.pageManager.saveDebounced();
+
+        const name = shapeNames[shapeType] || shapeType;
+        this.widgets.showToast(`📐 已選擇幾何圖形「${name}」：在白板上拖曳即可畫出`);
       });
+    });
+
+    // 點擊畫布或其他區域自動收起幾何選單
+    document.addEventListener('pointerdown', (e) => {
+      if (popover && popover.classList.contains('show')) {
+        if (!e.target.closest('#shapes-popover') && !e.target.closest('[data-tool="shape"]')) {
+          popover.classList.remove('show');
+        }
+      }
     });
 
     // 智慧圖形辨識按鈕開關

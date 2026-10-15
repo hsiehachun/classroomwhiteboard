@@ -202,7 +202,11 @@ export class ShapeRenderer {
   static drawShape(ctx, shape, options = {}) {
     ctx.save();
     ctx.strokeStyle = shape.color || options.color || '#333333';
-    ctx.lineWidth = shape.width || options.width || 3;
+    
+    // 正確取得線寬，避免幾何外框寬度 (shape.width) 覆蓋線條粗細
+    const strokeWidth = shape.strokeWidth || shape.lineWidth ||
+      (shape.shapeType === 'rect' || shape.shapeType === 'coordinate' ? (options.strokeWidth || options.width || 3) : (shape.width || options.width || 3));
+    ctx.lineWidth = Math.max(1, Math.min(60, strokeWidth));
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
@@ -230,21 +234,21 @@ export class ShapeRenderer {
 
       case 'rect':
         ctx.beginPath();
-        ctx.rect(shape.x, shape.y, shape.width, shape.height);
+        ctx.rect(shape.x, shape.y, Math.max(1, shape.width || 1), Math.max(1, shape.height || 1));
         if (shape.fill) ctx.fill();
         ctx.stroke();
         break;
 
       case 'circle':
         ctx.beginPath();
-        ctx.arc(shape.cx, shape.cy, shape.r, 0, Math.PI * 2);
+        ctx.arc(shape.cx, shape.cy, Math.max(1, shape.r || 1), 0, Math.PI * 2);
         if (shape.fill) ctx.fill();
         ctx.stroke();
         break;
 
       case 'ellipse':
         ctx.beginPath();
-        ctx.ellipse(shape.cx, shape.cy, Math.abs(shape.rx), Math.abs(shape.ry), 0, 0, Math.PI * 2);
+        ctx.ellipse(shape.cx, shape.cy, Math.max(1, Math.abs(shape.rx || 1)), Math.max(1, Math.abs(shape.ry || 1)), 0, 0, Math.PI * 2);
         if (shape.fill) ctx.fill();
         ctx.stroke();
         break;
