@@ -1,0 +1,39 @@
+name: Deploy Whiteboard to GitHub Pages
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+# 設定 GITHUB_TOKEN 權限以支援部署至 GitHub Pages
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 確保同時只有一個部署正在執行
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: 檢出專案代碼 (Checkout)
+        uses: actions/checkout@v4
+
+      - name: 設定 GitHub Pages 環境
+        uses: actions/configure-pages@v4
+
+      - name: 上傳靜態檔案
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: '.'
+
+      - name: 部署至 GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

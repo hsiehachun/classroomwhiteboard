@@ -1,0 +1,12 @@
+# 操作系統與暫存檔
+.DS_Store
+Thumbs.db
+desktop.ini
+*.log
+
+# 系統生成與相依性
+.system_generated/
+node_modules/
+
+# 本機打包壓縮檔 (可自行下載備份)
+*.zip
