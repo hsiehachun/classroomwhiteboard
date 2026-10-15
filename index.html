@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>課堂教學互動白板</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%233b82f6' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M12 19l7-7 3 3-7 7-3-3z'></path><path d='M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z'></path><path d='M2 2l7.586 7.586'></path><circle cx='11' cy='11' r='2'></circle></svg>">
+</head>
+<body>
+
+  <!-- 畫布容器 (雙層渲染架構) -->
+  <div id="canvas-container">
+    <canvas id="bg-canvas"></canvas>
+    <canvas id="main-canvas"></canvas>
+    <canvas id="overlay-canvas"></canvas>
+    <canvas id="spotlight-canvas"></canvas>
+    <div id="text-editor-overlay" contenteditable="true" spellcheck="false"></div>
+  </div>
+
+  <!-- 頂部浮動工具列 (左側無字樣，右側情境設定) -->
+  <header id="top-bar">
+    <div class="top-left-group">
+      <div id="save-status-badge" class="glass-panel save-status-badge" title="本機已雙層自動備份，關閉或重新整理網頁都不會遺失板書">
+        <span class="status-dot"></span>
+        <span id="save-status-text" class="status-text">已自動儲存</span>
+      </div>
+    </div>
+
+    <!-- 右側：教學情境與輔助工具 -->
+    <div class="top-right-group">
+      <!-- 主題切換 (白板 / 綠板 / 黑板) -->
+      <div class="glass-panel" style="padding: 4px 8px; display: flex; align-items: center; gap: 6px;">
+        <select id="theme-select" style="border: none; background: transparent; color: inherit; font-size: 13px; font-weight: 600; outline: none; cursor: pointer;">
+          <option value="whiteboard">⚪ 經典白板</option>
+          <option value="greenboard">🟢 學校綠板</option>
+          <option value="blackboard">⚫ 護眼黑板</option>
+        </select>
+        <select id="grid-select" style="border: none; background: transparent; color: inherit; font-size: 13px; font-weight: 500; outline: none; cursor: pointer;">
+          <option value="grid">方格線</option>
+          <option value="dots">點陣網格</option>
+          <option value="lines">橫線筆記</option>
+          <option value="blank">空白無格</option>
+        </select>
+      </div>
+
+      <!-- 課堂計時器與抽籤器按鈕 -->
+      <div class="glass-panel" style="display: flex; gap: 2px; padding: 4px;">
+        <button id="btn-open-timer" class="btn-icon-only" title="課堂倒數計時器">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+        </button>
+        <button id="btn-open-picker" class="btn-icon-only" title="課堂隨機抽籤 (座號/姓名)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="5"></rect><circle cx="8" cy="8" r="1.5"></circle><circle cx="16" cy="16" r="1.5"></circle><circle cx="8" cy="16" r="1.5"></circle><circle cx="16" cy="8" r="1.5"></circle><circle cx="12" cy="12" r="1.5"></circle></svg>
+        </button>
+        <button id="btn-fullscreen" class="btn-icon-only" title="全螢幕授課模式">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg>
+        </button>
+        <button id="btn-help-modal" class="btn-icon-only" title="使用指南與快捷鍵 (?)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- 畫筆屬性面板 (置頂中央，獨立面板，完全可互動點選) -->
+  <div id="properties-bar" class="glass-panel">
+    <!-- 經典教學色盤 -->
+    <div class="color-palette">
+      <div class="color-dot active" data-color="#1e293b" style="background-color: #1e293b;" title="經典黑/深灰"></div>
+      <div class="color-dot" data-color="#dc2626" style="background-color: #dc2626;" title="重點紅"></div>
+      <div class="color-dot" data-color="#2563eb" style="background-color: #2563eb;" title="教學藍"></div>
+      <div class="color-dot" data-color="#16a34a" style="background-color: #16a34a;" title="提示綠"></div>
+      <div class="color-dot" data-color="#ea580c" style="background-color: #ea580c;" title="醒目橘"></div>
+      <div class="color-dot" data-color="#9333ea" style="background-color: #9333ea;" title="思考紫"></div>
+      <div class="color-dot" data-color="#eab308" style="background-color: #eab308;" title="重點黃"></div>
+      <div class="color-dot" data-color="#ffffff" style="background-color: #ffffff; border: 1px solid #cbd5e1;" title="粉筆白"></div>
+      <div class="color-picker-wrapper" title="自訂色彩">
+        <input type="color" id="custom-color-picker" value="#3b82f6">
+      </div>
+    </div>
+
+    <!-- 筆觸粗細 -->
+    <div class="stroke-size-group">
+      <button class="size-btn" data-size="2" title="細筆 (2px)">
+        <div class="size-indicator" style="width: 4px; height: 4px;"></div>
+      </button>
+      <button class="size-btn active" data-size="4" title="標準 (4px)">
+        <div class="size-indicator" style="width: 7px; height: 7px;"></div>
+      </button>
+      <button class="size-btn" data-size="8" title="粗體重點 (8px)">
+        <div class="size-indicator" style="width: 11px; height: 11px;"></div>
+      </button>
+      <button class="size-btn" data-size="16" title="特粗醒目 (16px)">
+        <div class="size-indicator" style="width: 16px; height: 16px;"></div>
+      </button>
+    </div>
+
+    <!-- 智慧圖形識別按鈕 (Ziteboard 招牌技術) -->
+    <button id="smart-shape-toggle" class="smart-toggle-btn active" title="開啟時，徒手畫圓、矩形、直線會自動修正為完美幾何！">
+      <span>⚡ 智慧幾何</span>
+    </button>
+  </div>
+
+  <!-- 選取物件快捷操作列 (浮動於被選取便利貼/物件上方) -->
+  <div id="selected-actions" class="glass-panel" style="position: absolute; display: none; align-items: center; gap: 6px; padding: 4px 8px; z-index: 65;">
+    <button id="btn-edit-selected" class="btn-icon-text" style="font-size: 12px; padding: 4px 8px;" title="編輯內容">
+      <span>✏️ 編輯內容</span>
+    </button>
+    <button id="btn-delete-selected" class="btn-icon-text" style="color: #ef4444; font-size: 12px; padding: 4px 8px; font-weight: 600;" title="刪除此物件 (或按鍵盤 Delete 鍵)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 14px; height: 14px;"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+      <span>刪除 (Del)</span>
+    </button>
+  </div>
+
+  <!-- 左側懸浮主工具列 -->
+  <nav id="main-toolbar" class="glass-panel">
+    <!-- 筆 (鋼筆/粉筆) -->
+    <button class="tool-btn active" data-tool="pen" data-tooltip="筆 (P)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg>
+    </button>
+
+    <!-- 螢光筆 -->
+    <button class="tool-btn" data-tool="highlighter" data-tooltip="螢光標記筆 (H)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="m9 11-6 6v3h3l6-6"></path><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"></path></svg>
+    </button>
+
+    <!-- 幾何形狀 -->
+    <button class="tool-btn" data-tool="shape" data-tooltip="幾何圖形 (S)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="9"></circle><rect x="6" y="6" width="12" height="12" stroke-dasharray="2 2"></rect></svg>
+    </button>
+
+    <!-- 橡皮擦 -->
+    <button class="tool-btn" data-tool="eraser" data-tooltip="筆畫橡皮擦 (E)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21"></path><path d="M22 21H7"></path><path d="m5 11 9 9"></path></svg>
+    </button>
+
+    <!-- 雷射筆 (課堂重點引導，自帶漸隱消散流星光暈) -->
+    <button class="tool-btn" data-tool="laser" data-tooltip="雷射筆重點指引 (L)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="3"></circle><path d="M12 2v3m0 14v3M2 12h3m14 0h3m-3.5-6.5L16.4 7.6m-8.8 8.8-2.1 2.1m0-13 2.1 2.1m8.8 8.8 2.1 2.1"></path></svg>
+    </button>
+
+    <!-- 探照燈 (課堂焦點聚光燈，壓暗全場突出重點) -->
+    <button class="tool-btn" data-tool="spotlight" data-tooltip="探照燈聚光 (F)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="4"></circle>
+        <path d="M12 2v3m0 14v3M2 12h3m14 0h3"></path>
+        <path d="m4.93 4.93 2.12 2.12m9.9 9.9 2.12 2.12m0-14.14-2.12 2.12m-9.9 9.9-2.12 2.12"></path>
+      </svg>
+    </button>
+
+    <div class="toolbar-divider"></div>
+
+    <!-- 文字筆記 -->
+    <button class="tool-btn" data-tool="text" data-tooltip="文字輸入 (T)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="4 7 4 4 20 4 20 7"></polyline><line x1="9" y1="20" x2="15" y2="20"></line><line x1="12" y1="4" x2="12" y2="20"></line></svg>
+    </button>
+
+    <!-- 便利貼 -->
+    <button class="tool-btn" data-tool="sticky" data-tooltip="便利貼筆記">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M16 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8Z"></path><path d="M15 3v5h6"></path></svg>
+    </button>
+
+    <!-- 插入/貼上圖片 -->
+    <button id="btn-upload-image" class="tool-btn" data-tooltip="貼上/上傳圖片 (Ctrl+V)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+    </button>
+
+    <!-- 移動 / 選取 -->
+    <button class="tool-btn" data-tool="select" data-tooltip="選取與移動 (V)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="m3 3 7 18 3-7 7-3L3 3z"></path></svg>
+    </button>
+    <button class="tool-btn" data-tool="hand" data-tooltip="平移畫布 (空白鍵拖曳)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M18 11V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v0"></path><path d="M14 10V4a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v2"></path><path d="M10 10.5V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v8"></path><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"></path></svg>
+    </button>
+  </nav>
+
+  <!-- 幾何形狀二級彈出選單 -->
+  <div id="shapes-popover" class="glass-panel">
+    <button class="shape-option-btn active" data-shape="rect" title="矩形">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"></rect></svg>
+    </button>
+    <button class="shape-option-btn" data-shape="circle" title="圓形">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"></circle></svg>
+    </button>
+    <button class="shape-option-btn" data-shape="ellipse" title="橢圓">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="12" rx="9" ry="6"></ellipse></svg>
+    </button>
+    <button class="shape-option-btn" data-shape="line" title="直線">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="19" x2="19" y2="5"></line></svg>
+    </button>
+    <button class="shape-option-btn" data-shape="arrow" title="單向箭頭">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="19" x2="19" y2="5"></line><polyline points="10 5 19 5 19 14"></polyline></svg>
+    </button>
+    <button class="shape-option-btn" data-shape="double_arrow" title="雙向箭頭">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="6" y1="18" x2="18" y2="6"></line><polyline points="10 6 18 6 18 14"></polyline><polyline points="14 18 6 18 6 10"></polyline></svg>
+    </button>
+    <button class="shape-option-btn" data-shape="triangle" title="三角形">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 3 2 21 22 21 12 3"></polygon></svg>
+    </button>
+    <button class="shape-option-btn" data-shape="coordinate" title="平面直角坐標系 (數學神器)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 20 4 4 1 7"></polyline><polyline points="4 20 20 20 17 17"></polyline></svg>
+    </button>
+  </div>
+
+  <!-- 底部控制列 (歷史、分頁、縮放與匯出) -->
+  <footer id="bottom-bar">
+    <!-- 左側：復原、重做、清空 -->
+    <div class="bottom-left-group">
+      <div class="glass-panel" style="display: flex; gap: 4px; padding: 4px;">
+        <button id="btn-undo" class="btn-icon-only" title="復原 (Ctrl+Z)" disabled>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>
+        </button>
+        <button id="btn-redo" class="btn-icon-only" title="重做 (Ctrl+Y)" disabled>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
+        </button>
+        <button id="btn-clear-canvas" class="btn-icon-only" title="清空當前頁面">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- 中間：多頁板書切換 -->
+    <div class="bottom-center-group">
+      <div class="glass-panel" style="display: flex; align-items: center; gap: 6px; padding: 4px 10px;">
+        <button id="btn-prev-page" class="btn-icon-only" title="上一頁">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"></polyline></svg>
+        </button>
+        <span id="page-indicator-text" class="page-indicator">1 / 1</span>
+        <button id="btn-next-page" class="btn-icon-only" title="下一頁">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+        </button>
+        <button id="btn-add-page" class="btn-icon-only" title="新增分頁">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+        </button>
+        <button id="btn-delete-page" class="btn-icon-only" title="刪除此頁">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- 右側：縮放比例與匯出 -->
+    <div class="bottom-right-group">
+      <div class="glass-panel" style="display: flex; align-items: center; gap: 4px; padding: 4px 8px;">
+        <button id="btn-zoom-out" class="btn-icon-only" title="縮小 (滾輪向下)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line><line x1="8" y1="11" x2="14" y2="11"></line></svg>
+        </button>
+        <span id="zoom-percentage" class="zoom-badge" title="點擊重設 100%">100%</span>
+        <button id="btn-zoom-in" class="btn-icon-only" title="放大 (滾輪向上)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line><line x1="11" y1="8" x2="11" y2="14"></line><line x1="8" y1="11" x2="14" y2="11"></line></svg>
+        </button>
+      </div>
+
+      <div class="glass-panel" style="display: flex; gap: 4px; padding: 4px;">
+        <button id="btn-export-png" class="btn-icon-text" title="下載高解析度 PNG 圖片">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 16px; height: 16px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+          <span>匯出圖片</span>
+        </button>
+        <button id="btn-export-json" class="btn-icon-only" title="備份板書 (JSON 格式)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+        </button>
+        <button id="btn-import-json" class="btn-icon-only" title="匯入歷史板書">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+        </button>
+      </div>
+    </div>
+  </footer>
+
+  <!-- 隱藏的檔案輸入項 -->
+  <input type="file" id="image-file-input" accept="image/*" style="display: none;">
+  <input type="file" id="json-file-input" accept=".json" style="display: none;">
+
+  <!-- 浮動小工具：課堂倒數計時器 -->
+  <div id="timer-window" class="glass-panel widget-window">
+    <div class="widget-header">
+      <span>⏱️ 課堂計時器</span>
+      <button id="timer-close-btn" class="close-btn">✕</button>
+    </div>
+    <div id="timer-display" class="timer-display">03:00</div>
+    <div class="widget-btn-row">
+      <button id="timer-add-1m" class="widget-action-btn">+1 分</button>
+      <button id="timer-add-3m" class="widget-action-btn">+3 分</button>
+      <button id="timer-add-5m" class="widget-action-btn">+5 分</button>
+    </div>
+    <div class="widget-btn-row">
+      <button id="timer-reset-btn" class="widget-action-btn">重設</button>
+      <button id="timer-start-btn" class="widget-action-btn primary">開始</button>
+    </div>
+  </div>
+
+  <!-- 浮動小工具：課堂隨機抽籤器 -->
+  <div id="picker-window" class="glass-panel widget-window">
+    <div class="widget-header">
+      <span>🎯 課堂隨機抽籤</span>
+      <button id="picker-close-btn" class="close-btn">✕</button>
+    </div>
+    <div id="picker-result" class="picker-result">點擊開始</div>
+    <div style="display: flex; align-items: center; justify-content: space-between; font-size: 13px;">
+      <span>班級總人數 (座號)：</span>
+      <input type="number" id="picker-max-num" value="35" min="1" max="100" style="width: 60px; padding: 4px 6px; border: 1px solid var(--panel-border); border-radius: 4px; text-align: center; font-weight: 600;">
+    </div>
+    <button id="picker-start-btn" class="widget-action-btn primary" style="width: 100%; padding: 10px;">🎲 隨機抽籤</button>
+  </div>
+
+  <!-- 說明與快捷鍵 Modal -->
+  <div id="help-modal" class="modal-backdrop">
+    <div class="glass-panel modal-content">
+      <div class="modal-header">
+        <h3 class="modal-title">🎓 課堂教學互動白板使用指南</h3>
+        <button id="help-modal-close" class="close-btn" style="border: none; background: transparent; font-size: 18px; cursor: pointer;">✕</button>
+      </div>
+      <p style="font-size: 13.5px; color: var(--text-secondary); line-height: 1.6;">
+        專為教師授課設計的高效互動白板，具備無邊界畫布、智慧形狀修正、流暢手寫與課堂實用工具。
+      </p>
+
+      <h4 style="font-size: 14px; font-weight: 700; margin-top: 4px;">⚡ 招牌核心亮點</h4>
+      <ul style="font-size: 13px; line-height: 1.7; padding-left: 20px; color: var(--text-secondary);">
+        <li><b>智慧幾何辨識：</b>徒手畫出大概的圓形、橢圓、直線或矩形，系統會自動辨識並轉成端正幾何！</li>
+        <li><b>教學雷射筆：</b>鼠標拖曳即產生發光紅光，並如流星般於 1.1 秒內自動消散，吸引全班注意力。</li>
+        <li><b>直接貼上講義圖片：</b>按 <kbd>Ctrl+V</kbd> 即可直接把剪貼簿截圖、考題或講義貼到黑板上。</li>
+        <li><b>黑板 / 綠板 / 白板一鍵切換：</b>護眼墨黑黑板與深綠粉筆板，搭配數學坐標紙與方格線。</li>
+        <li><b>本機自動備份：</b>所有板書自動保存在瀏覽器，不小心關閉網頁也能完整還原！</li>
+      </ul>
+
+      <h4 style="font-size: 14px; font-weight: 700; margin-top: 4px;">⌨️ 常用快捷鍵</h4>
+      <div class="shortcut-grid">
+        <div class="shortcut-item"><span>畫筆</span><kbd>P</kbd></div>
+        <div class="shortcut-item"><span>螢光筆</span><kbd>H</kbd></div>
+        <div class="shortcut-item"><span>橡皮擦</span><kbd>E</kbd></div>
+        <div class="shortcut-item"><span>雷射筆</span><kbd>L</kbd></div>
+        <div class="shortcut-item"><span>探照燈聚光</span><kbd>F</kbd></div>
+        <div class="shortcut-item"><span>幾何圖形</span><kbd>S</kbd></div>
+        <div class="shortcut-item"><span>文字輸入</span><kbd>T</kbd></div>
+        <div class="shortcut-item"><span>選取移動</span><kbd>V</kbd></div>
+        <div class="shortcut-item"><span>平移畫布</span><kbd>Space + 拖曳</kbd></div>
+        <div class="shortcut-item"><span>縮放畫布</span><kbd>滑鼠滾輪</kbd></div>
+        <div class="shortcut-item"><span>復原</span><kbd>Ctrl + Z</kbd></div>
+        <div class="shortcut-item"><span>重做</span><kbd>Ctrl + Y</kbd></div>
+        <div class="shortcut-item"><span>貼上圖片</span><kbd>Ctrl + V</kbd></div>
+      </div>
+
+      <div style="margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--panel-border); display: flex; justify-content: space-between; align-items: center;">
+        <span style="font-size: 12px; color: var(--text-secondary);">若要展開全新章節課程：</span>
+        <button id="btn-reset-board-all" class="widget-action-btn" style="color: #ef4444; border-color: rgba(239, 68, 68, 0.4); padding: 5px 12px; font-size: 12px;">🗑️ 清空暫存並重設為空白白板</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast 訊息提示容器 -->
+  <div id="toast-container"></div>
+
+  <!-- 主程式模組載入 -->
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

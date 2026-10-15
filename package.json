@@ -1,0 +1,20 @@
+{
+  "name": "classroom-whiteboard",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "專業課堂教學互動白板 - 支援無邊界畫布、智慧幾何辨識、雷射筆、黑白板切換與課堂工具",
+  "main": "index.html",
+  "scripts": {
+    "start": "python -m http.server 8090"
+  },
+  "keywords": [
+    "whiteboard",
+    "teaching",
+    "education",
+    "canvas",
+    "ziteboard",
+    "chalkboard"
+  ],
+  "author": "",
+  "license": "MIT"
+}
